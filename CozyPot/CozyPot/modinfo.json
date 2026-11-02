@@ -1,0 +1,15 @@
+{
+    "$schema": "https://moddbcdn.vintagestory.at/schema/modinfo.latest.json",
+    "type": "Code",
+    "modid": "cozypot",
+    "name": "CozyPot",
+    "authors": [ "SecretLovers" ],
+    "description": "Lowers the food level in the cooking pot by servings amount",
+    "version": "1.0.0",
+    "side": "Client",
+    "requiredOnClient": false,
+    "requiredOnServer": false,
+    "dependencies": {
+        "game": "1.22.0"
+    }
+}

@@ -1,0 +1,27 @@
+# Build output and restored dependencies
+[Bb]in/
+[Oo]bj/
+[Pp]ackages/
+[Rr]eleases/
+artifacts/
+
+# Tests and test results
+*.Tests/
+[Tt]ests/
+[Tt]est[Rr]esults/
+
+# Local IDE settings and caches
+.idea/
+.vs/
+.vscode/
+*.iml
+*.user
+*.suo
+_ReSharper*/
+
+# Temporary files and logs
+*.log
+*.tmp
+*.bak
+.DS_Store
+Thumbs.db
