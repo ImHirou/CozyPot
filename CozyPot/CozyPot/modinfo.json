@@ -5,7 +5,7 @@
     "name": "CozyPot",
     "authors": [ "SecretLovers" ],
     "description": "Lowers the food level in the cooking pot by servings amount",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "side": "Client",
     "requiredOnClient": false,
     "requiredOnServer": false,

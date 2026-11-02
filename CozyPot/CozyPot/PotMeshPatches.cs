@@ -22,12 +22,14 @@ internal static class PotTranslationPatch
         yield return AccessTools.Constructor(typeof(PotInFirepitRenderer), new[] { typeof(ICoreClientAPI), typeof(ItemStack), typeof(BlockPos), typeof(bool) });
     }
 
-    private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, MethodBase original)
+    internal static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, MethodBase original)
     {
         var vectorConstructor = AccessTools.Constructor(typeof(Vec3f), new[] { typeof(float), typeof(float), typeof(float) });
         bool blockEntity = original.DeclaringType == typeof(BlockEntityCookedContainer);
         bool slot = !blockEntity && (original.Name is nameof(BlockCookedContainer.GenMesh) or nameof(BlockCookedContainer.GetMeshCacheKey));
-        var helper = AccessTools.Method(typeof(PotFoodLevel), blockEntity ? nameof(PotFoodLevel.ForBlockEntity) : nameof(PotFoodLevel.ForStack));
+        bool metalPot = original.DeclaringType?.FullName == "MetalPots.Blocks.MPBlockCookedContainer";
+        var helper = AccessTools.Method(typeof(PotFoodLevel), blockEntity ? nameof(PotFoodLevel.ForBlockEntity)
+            : metalPot ? nameof(PotFoodLevel.ForMetalStack) : nameof(PotFoodLevel.ForStack));
         int replacements = 0;
 
         foreach (var instruction in instructions)
@@ -77,7 +79,7 @@ internal static class PlacedPotSyncPatch
 [HarmonyPatch(typeof(PotInFirepitRenderer), MethodType.Constructor, typeof(ICoreClientAPI), typeof(ItemStack), typeof(BlockPos), typeof(bool) )]
 internal static class CookedPotInFirepitPatch
 {
-    private static void Prefix(ItemStack stack, ref bool isInOutputSlot)
+    internal static void Prefix(ItemStack stack, ref bool isInOutputSlot)
     {
         if (PotFoodLevel.IsPot(stack.Block)) isInOutputSlot = true;
     }
@@ -91,11 +93,14 @@ internal static class FirepitPotSyncPatch
 
     private static void Postfix(BlockEntityFirepit __instance, FirepitContentsRenderer? ___renderer)
     {
-        if (__instance.Api is not ICoreClientAPI capi || ___renderer?.contentStackRenderer is not PotInFirepitRenderer potRenderer)
+        if (__instance.Api is not ICoreClientAPI capi || ___renderer?.contentStackRenderer == null)
             return;
 
         var stack = __instance.inputStack ?? __instance.outputStack;
         if (!PotFoodLevel.IsPot(stack?.Block)) return;
+
+        if (MetalPotsCompatibility.UpdateFirepitMesh(capi, stack!, ___renderer.contentStackRenderer)) return;
+        if (___renderer.contentStackRenderer is not PotInFirepitRenderer potRenderer) return;
 
         var block = (BlockCookedContainer)stack!.Block;
         var cache = capi.ModLoader.GetModSystem<MealMeshCache>();

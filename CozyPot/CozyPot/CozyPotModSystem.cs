@@ -17,11 +17,13 @@ public class CozyPotModSystem : ModSystem
         try
         {
             harmony.PatchAll(typeof(CozyPotModSystem).Assembly);
+            MetalPotsCompatibility.Apply(harmony, api);
             api.Logger.Notification("[CozyPot] Client pot food levels enabled.");
         }
         catch
         {
             harmony.UnpatchAll(HarmonyId);
+            MetalPotsCompatibility.Reset();
             throw;
         }
     }
@@ -30,6 +32,7 @@ public class CozyPotModSystem : ModSystem
     {
         harmony?.UnpatchAll(HarmonyId);
         harmony = null;
+        MetalPotsCompatibility.Reset();
         base.Dispose();
     }
 }
