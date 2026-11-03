@@ -15,18 +15,15 @@ internal static class PotTranslationPatch
 {
     private static IEnumerable<MethodBase> TargetMethods()
     {
-        yield return AccessTools.Method(typeof(BlockCookedContainer), nameof(BlockCookedContainer.OnBeforeRender));
         yield return AccessTools.Method(typeof(BlockCookedContainer), nameof(BlockCookedContainer.GenMesh));
         yield return AccessTools.Method(typeof(BlockCookedContainer), nameof(BlockCookedContainer.GetMeshCacheKey));
         yield return AccessTools.Method(typeof(BlockEntityCookedContainer), nameof(BlockEntityCookedContainer.GenMesh));
-        yield return AccessTools.Constructor(typeof(PotInFirepitRenderer), new[] { typeof(ICoreClientAPI), typeof(ItemStack), typeof(BlockPos), typeof(bool) });
     }
 
     internal static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, MethodBase original)
     {
         var vectorConstructor = AccessTools.Constructor(typeof(Vec3f), new[] { typeof(float), typeof(float), typeof(float) });
         bool blockEntity = original.DeclaringType == typeof(BlockEntityCookedContainer);
-        bool slot = !blockEntity && (original.Name is nameof(BlockCookedContainer.GenMesh) or nameof(BlockCookedContainer.GetMeshCacheKey));
         bool metalPot = original.DeclaringType?.FullName == "MetalPots.Blocks.MPBlockCookedContainer";
         var helper = AccessTools.Method(typeof(PotFoodLevel), blockEntity ? nameof(PotFoodLevel.ForBlockEntity)
             : metalPot ? nameof(PotFoodLevel.ForMetalStack) : nameof(PotFoodLevel.ForStack));
@@ -40,11 +37,11 @@ internal static class PotTranslationPatch
                 continue;
             }
 
-            var loadContext = new CodeInstruction(blockEntity ? OpCodes.Ldarg_0 : slot ? OpCodes.Ldarg_1 : OpCodes.Ldarg_2);
+            var loadContext = new CodeInstruction(blockEntity ? OpCodes.Ldarg_0 : OpCodes.Ldarg_1);
             loadContext.MoveLabelsFrom(instruction);
             loadContext.MoveBlocksFrom(instruction);
             yield return loadContext;
-            if (slot) yield return new CodeInstruction(OpCodes.Callvirt, AccessTools.PropertyGetter(typeof(ItemSlot), nameof(ItemSlot.Itemstack)));
+            if (!blockEntity) yield return new CodeInstruction(OpCodes.Callvirt, AccessTools.PropertyGetter(typeof(ItemSlot), nameof(ItemSlot.Itemstack)));
             yield return new CodeInstruction(OpCodes.Call, helper);
             replacements++;
         }
@@ -54,16 +51,37 @@ internal static class PotTranslationPatch
     }
 }
 
-[HarmonyPatch(typeof(MealMeshCache), nameof(MealMeshCache.GetOrCreateMealInContainerMeshRef), typeof(IBlockMealContainer), typeof(ItemStack), typeof(Vec3f))]
-internal static class StoredPotMeshPatch
+[HarmonyPatch(typeof(BlockCookedContainer), nameof(BlockCookedContainer.OnBeforeRender))]
+internal static class PotItemRenderPatch
 {
-    private static void Prefix(ItemStack containerStack, ref Vec3f? foodTranslate)
+    private static bool Prefix(ItemStack itemstack, ref ItemRenderInfo renderinfo)
     {
-        if (PotFoodLevel.IsPot(containerStack.Block))
-        {
-            var offset = foodTranslate ?? new Vec3f(0, ((BlockCookedContainer)containerStack.Block).yoff / 16, 0);
-            foodTranslate = PotFoodLevel.ForStack(offset.X, offset.Y, offset.Z, containerStack);
-        }
+        if (!PotFoodLevel.IsPot(itemstack.Block) || PotMealMeshCache.Instance is not { } cache) return true;
+        var mesh = cache.GetOrCreate(itemstack);
+        if (mesh != null) renderinfo.ModelRef = mesh;
+        return false;
+    }
+}
+
+[HarmonyPatch(typeof(MealMeshCache), nameof(MealMeshCache.GetOrCreateMealInContainerMeshRef), typeof(IBlockMealContainer), typeof(ItemStack), typeof(Vec3f))]
+internal static class StackMealMeshPatch
+{
+    private static bool Prefix(ItemStack containerStack, ref MultiTextureMeshRef? __result)
+    {
+        if (!PotFoodLevel.IsPot(containerStack?.Block) || PotMealMeshCache.Instance is not { } cache) return true;
+        __result = cache.GetOrCreate(containerStack!);
+        return false;
+    }
+}
+
+[HarmonyPatch(typeof(MealMeshCache), nameof(MealMeshCache.GetOrCreateMealInContainerMeshRef), typeof(Block), typeof(CookingRecipe), typeof(ItemStack[]), typeof(Vec3f))]
+internal static class RecipeMealMeshPatch
+{
+    private static bool Prefix(Block containerBlock, CookingRecipe? forRecipe, ItemStack?[]? contentStacks, ref MultiTextureMeshRef? __result)
+    {
+        if (!PotFoodLevel.IsPot(containerBlock) || PotMealMeshCache.Instance is not { } cache) return true;
+        __result = cache.GetOrCreate((BlockCookedContainer)containerBlock, forRecipe, contentStacks, 0);
+        return false;
     }
 }
 
@@ -93,18 +111,12 @@ internal static class FirepitPotSyncPatch
 
     private static void Postfix(BlockEntityFirepit __instance, FirepitContentsRenderer? ___renderer)
     {
-        if (__instance.Api is not ICoreClientAPI capi || ___renderer?.contentStackRenderer == null)
-            return;
+        if (___renderer?.contentStackRenderer is not { } renderer || PotMealMeshCache.Instance is not { } cache) return;
 
         var stack = __instance.inputStack ?? __instance.outputStack;
-        if (!PotFoodLevel.IsPot(stack?.Block)) return;
+        if (!PotFoodLevel.IsPot(stack?.Block) || cache.GetOrCreate(stack!) is not { } mesh) return;
 
-        if (MetalPotsCompatibility.UpdateFirepitMesh(capi, stack!, ___renderer.contentStackRenderer)) return;
-        if (___renderer.contentStackRenderer is not PotInFirepitRenderer potRenderer) return;
-
-        var block = (BlockCookedContainer)stack!.Block;
-        var cache = capi.ModLoader.GetModSystem<MealMeshCache>();
-        var mesh = cache.GetOrCreateMealInContainerMeshRef(block, stack, new Vec3f(0, block.yoff / 16, 0));
-        if (mesh != null) FoodMesh(potRenderer) = mesh;
+        if (renderer is PotInFirepitRenderer potRenderer) FoodMesh(potRenderer) = mesh;
+        else MetalPotsCompatibility.SetFirepitMesh(renderer, mesh);
     }
 }

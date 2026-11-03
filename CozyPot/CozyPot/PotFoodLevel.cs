@@ -39,6 +39,14 @@ internal static class PotFoodLevel
         return new Vec3f(x, y, z);
     }
 
+    internal static float FoodLift(ItemStack? stack)
+    {
+        if (stack?.Block is not BlockCookedContainer block) return 0;
+        float full = block.yoff / 16;
+        if (IsMetalPot(block)) return 2 * (ForMetalStack(0, full, 0, stack).Y - full);
+        return IsPot(block) ? ForStack(0, full, 0, stack).Y - full : 0;
+    }
+
     internal static Vec3f ForBlockEntity(float x, float y, float z, BlockEntityCookedContainer container)
     {
         if (container.Api?.Side == EnumAppSide.Client && IsPot(container.Block))
